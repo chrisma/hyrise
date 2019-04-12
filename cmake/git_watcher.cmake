@@ -213,13 +213,7 @@ function(Main)
     endif()
 endfunction()
 
-# This is never called, but tells cmake to delete the git_state_file on `make/ninja clean`
-if(NOT CMAKE_SCRIPT_MODE_FILE)
-    add_custom_command(
-        OUTPUT "${git_state_file}"
-        COMMAND "false"
-    )
-endif()
+set_property(SOURCE "${git_state_file}"" PROPERTY GENERATED TRUE)
 
 # And off we go...
 Main()
