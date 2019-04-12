@@ -213,7 +213,7 @@ function(Main)
     endif()
 endfunction()
 
-set_property(SOURCE "${git_state_file}"" PROPERTY GENERATED TRUE)
+set_property(SOURCE "${git_state_file}" PROPERTY GENERATED TRUE)
 
 # And off we go...
 Main()
