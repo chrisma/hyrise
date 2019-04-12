@@ -292,7 +292,7 @@ set(
     gtest
     gmock
     sqlite3
-    MvccDeletePlugin
+    MvccDeletePlugin  # So that we can test member methods without going through dlsym
     ${FILESYSTEM_LIBRARY}
 )
 
@@ -310,11 +310,11 @@ include_directories(${CMAKE_CURRENT_SOURCE_DIR})
 # Configure hyriseTest
 add_executable(hyriseTest ${HYRISE_UNIT_TEST_SOURCES})
 add_dependencies(hyriseTest MvccDeletePlugin TestPlugin TestNonInstantiablePlugin)
-target_link_libraries(hyriseTest hyrise MvccDeletePlugin ${LIBRARIES})
+target_link_libraries(hyriseTest hyrise ${LIBRARIES})
 
 # Configure hyriseSystemTest
 add_executable(hyriseSystemTest ${SYSTEM_TEST_SOURCES})
 add_dependencies(hyriseSystemTest MvccDeletePlugin)
-target_link_libraries(hyriseSystemTest hyrise MvccDeletePlugin hyriseBenchmarkLib ${LIBRARIES})
+target_link_libraries(hyriseSystemTest hyrise hyriseBenchmarkLib ${LIBRARIES})
 target_link_libraries_system(hyriseSystemTest pqxx)
 target_compile_options(hyriseSystemTest PRIVATE -DPQXX_HIDE_EXP_OPTIONAL)
