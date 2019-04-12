@@ -680,13 +680,18 @@ add_custom_command (
     COMMAND dtrace -h -s ${CMAKE_CURRENT_LIST_DIR}/utils/tracing/provider.d -o ${PROVIDER_FILE}
 )
 
+add_custom_target(dtrace_provider
+    DEPENDS ${PROVIDER_FILE}
+)
+
 set(SOURCES ${SOURCES} ${PROVIDER_FILE})
 
 # Configure the regular hyrise library used for tests/server/playground...
 add_library(hyrise_impl STATIC ${SOURCES})
+add_dependencies(hyrise_impl dtrace_provider)
 
 # -rdynamic tells the linker to export the library's symbols so that plugins can use them.
-target_link_libraries(hyrise_impl ${LIBRARIES} -rdynamic)
+target_link_libraries(hyrise_impl PUBLIC ${LIBRARIES} -rdynamic)
 target_include_directories(hyrise_impl PUBLIC ${CMAKE_BINARY_DIR})
 
 # -fPIC generates position independent code which is necessary because plugins might access hyrise functions.
@@ -703,6 +708,7 @@ if (${ENABLE_JIT_SUPPORT})
 endif()
 
 add_library(hyrise INTERFACE)
+target_include_directories(hyrise INTERFACE $<TARGET_PROPERTY:hyrise_impl,INCLUDE_DIRECTORIES>)
 
 # -force_load/--whole-archive are necessary to include all symbols so that dynamically loaded plugins can use them
 if (APPLE)
@@ -710,3 +716,5 @@ if (APPLE)
 else()
     set_property(TARGET hyrise PROPERTY INTERFACE_LINK_LIBRARIES -Wl,--whole-archive,$<TARGET_FILE:hyrise_impl>,--no-whole-archive)
 endif()
+
+target_link_libraries(hyrise INTERFACE hyrise_impl)
