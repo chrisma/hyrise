@@ -704,6 +704,9 @@ if (${ENABLE_JIT_SUPPORT})
 endif()
 
 add_library(hyrise INTERFACE)
+get_filename_component(PROVIDER_FILE_ABSOLUTE_DIR ${CMAKE_BINARY_DIR} ABSOLUTE)
+target_link_libraries(hyrise INTERFACE ${LIBRARIES} -rdynamic)
+target_include_directories(hyrise INTERFACE ${PROVIDER_FILE_ABSOLUTE_DIR})
 # These flags are necessary to include all symbols so that dynamically loaded plugins can use them
 if (APPLE)
     set_property(TARGET hyrise PROPERTY INTERFACE_LINK_LIBRARIES -force_load $<TARGET_FILE:hyrise_impl>)
