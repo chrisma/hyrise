@@ -683,29 +683,30 @@ add_custom_command (
 set(SOURCES ${SOURCES} ${PROVIDER_FILE})
 
 # Configure the regular hyrise library used for tests/server/playground...
-add_library(hyrise STATIC ${SOURCES})
-
-# -force_load/--whole-archive are necessary to include all symbols so that dynamically loaded plugins can use them
-if (APPLE)
-    set_property(TARGET hyrise PROPERTY INTERFACE_LINK_LIBRARIES -force_load $<TARGET_FILE:hyrise>)
-else()
-    set_property(TARGET hyrise PROPERTY INTERFACE_LINK_LIBRARIES -Wl,--whole-archive,$<TARGET_FILE:hyrise>,--no-whole-archive)
-endif()
-
+add_library(hyrise_impl STATIC ${SOURCES})
 
 # -rdynamic tells the linker to export the library's symbols so that plugins can use them.
-target_link_libraries(hyrise ${LIBRARIES} -rdynamic)
-target_include_directories(hyrise PUBLIC ${CMAKE_BINARY_DIR})
+target_link_libraries(hyrise_impl ${LIBRARIES} -rdynamic)
+target_include_directories(hyrise_impl PUBLIC ${CMAKE_BINARY_DIR})
 
 # -fPIC generates position independent code which is necessary because plugins might access hyrise functions.
-target_compile_options(hyrise PRIVATE -fPIC)
+target_compile_options(hyrise_impl PRIVATE -fPIC)
 
 # Dependency hyrise --> git_watcher needs to be added manually, apparently. Otherwise version.hpp, for reasons unknown
 # isn't updated when HEAD changes
-add_dependencies(hyrise AlwaysCheckGit)
+add_dependencies(hyrise_impl AlwaysCheckGit)
 
 if (${ENABLE_JIT_SUPPORT})
     # LLVM does not build with -Wshadow-all,-Werror. Overwrite the LLVM include so it is treated as a system library.
     # This silences some compiler warnings (uses -isystem instead of -I).
-    # target_include_directories(hyrise SYSTEM PUBLIC ${LLVM_INCLUDE_DIR})
+    # target_include_directories(hyrise_impl SYSTEM PUBLIC ${LLVM_INCLUDE_DIR})
+endif()
+
+add_library(hyrise INTERFACE)
+
+# -force_load/--whole-archive are necessary to include all symbols so that dynamically loaded plugins can use them
+if (APPLE)
+    set_property(TARGET hyrise PROPERTY INTERFACE_LINK_LIBRARIES -force_load $<TARGET_FILE:hyrise_impl>)
+else()
+    set_property(TARGET hyrise PROPERTY INTERFACE_LINK_LIBRARIES -Wl,--whole-archive,$<TARGET_FILE:hyrise_impl>,--no-whole-archive)
 endif()
