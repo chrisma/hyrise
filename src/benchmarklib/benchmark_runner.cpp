@@ -278,7 +278,7 @@ void BenchmarkRunner::_benchmark_individual_queries() {
     // TODO(leander/anyone): To be replaced with something like CurrentScheduler::abort(),
     // that properly removes all remaining tasks from all queues, without having to wait for them
     for (auto& task : tasks) {
-        CurrentScheduler::wait_for_tasks(std::dynamic_pointer_cast<PipelineExecutionTask>(task)->get_tasks());
+      CurrentScheduler::wait_for_tasks(std::dynamic_pointer_cast<PipelineExecutionTask>(task)->get_tasks());
     }
     Assert(currently_running_clients == 0, "All query runs must be finished at this point");
   }

@@ -18,7 +18,6 @@ void PipelineExecutionTask::set_query_done_callback(const std::function<void()>&
   _done_callback = done_callback;
 }
 
-
 std::vector<std::shared_ptr<OperatorTask>> PipelineExecutionTask::get_tasks() {
   // Wait until this task has been executed
   if (!is_done()) {

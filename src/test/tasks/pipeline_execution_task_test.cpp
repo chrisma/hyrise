@@ -9,7 +9,7 @@ namespace opossum {
 
 class PipelineExecutionTaskTest : public BaseTest {
  public:
-  void SetUp() override {  // called ONCE before the tests
+  void SetUp() override {
     int_float_tbl = load_table("resources/test_data/tbl/int_float.tbl");
     StorageManager::get().add_table("int_float_tbl", int_float_tbl);
   }
@@ -47,7 +47,6 @@ TEST_F(PipelineExecutionTaskTest, GetSQLPipelineTasks) {
   EXPECT_EQ(pipeline_task->get_tasks().size(), 4u);
 }
 
-
 TEST_F(PipelineExecutionTaskTest, SetQueryDoneCallback) {
   const std::string sql = "SELECT a FROM int_float_tbl;";
 
@@ -55,7 +54,7 @@ TEST_F(PipelineExecutionTaskTest, SetQueryDoneCallback) {
   auto pipeline_task = std::make_shared<PipelineExecutionTask>(std::move(sql_pipeline_builder));
 
   auto query_done = false;
-  auto done_callback = [&query_done]{ query_done = true; };
+  auto done_callback = [&query_done] { query_done = true; };
 
   pipeline_task->set_done_callback(done_callback);
   pipeline_task->execute();
