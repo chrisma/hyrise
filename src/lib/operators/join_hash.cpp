@@ -15,7 +15,6 @@
 #include "scheduler/abstract_task.hpp"
 #include "scheduler/current_scheduler.hpp"
 #include "scheduler/job_task.hpp"
-#include "type_cast.hpp"
 #include "type_comparison.hpp"
 #include "utils/assert.hpp"
 #include "utils/timer.hpp"
@@ -25,9 +24,8 @@ namespace opossum {
 JoinHash::JoinHash(const std::shared_ptr<const AbstractOperator>& left,
                    const std::shared_ptr<const AbstractOperator>& right, const JoinMode mode,
                    const OperatorJoinPredicate& primary_predicate, const std::optional<size_t>& radix_bits,
-                   std::vector<OperatorJoinPredicate> secondary_predicates)
-    : AbstractJoinOperator(OperatorType::JoinHash, left, right, mode, primary_predicate,
-                           std::move(secondary_predicates)),
+                   const std::vector<OperatorJoinPredicate>& secondary_predicates)
+    : AbstractJoinOperator(OperatorType::JoinHash, left, right, mode, primary_predicate, secondary_predicates),
       _radix_bits(radix_bits) {
   Assert(primary_predicate.predicate_condition == PredicateCondition::Equals,
          "Unsupported primary PredicateCondition.");
@@ -77,15 +75,12 @@ std::shared_ptr<const Table> JoinHash::_on_execute() {
 
   // if the input operators are swapped, we also have to swap the column pairs and the predicate conditions
   // of the secondary join predicates.
-  std::vector<OperatorJoinPredicate> adjusted_secondary_predicates;
+  auto adjusted_secondary_predicates = _secondary_predicates;
 
   if (inputs_swapped) {
-    for (const auto& predicate : _secondary_predicates) {
-      adjusted_secondary_predicates.emplace_back(ColumnIDPair{predicate.column_ids.second, predicate.column_ids.first},
-                                                 flip_predicate_condition(predicate.predicate_condition));
+    for (auto& predicate : adjusted_secondary_predicates) {
+      predicate.flip();
     }
-  } else {
-    adjusted_secondary_predicates = _secondary_predicates;
   }
 
   auto adjusted_column_ids = std::make_pair(build_column_id, probe_column_id);
@@ -93,10 +88,26 @@ std::shared_ptr<const Table> JoinHash::_on_execute() {
   auto build_input = build_operator->get_output();
   auto probe_input = probe_operator->get_output();
 
-  _impl = make_unique_by_data_types<AbstractReadOnlyOperatorImpl, JoinHashImpl>(
-      build_input->column_data_type(build_column_id), probe_input->column_data_type(probe_column_id), *this,
-      build_operator, probe_operator, _mode, adjusted_column_ids, _primary_predicate.predicate_condition,
-      inputs_swapped, _radix_bits, std::move(adjusted_secondary_predicates));
+  resolve_data_type(build_input->column_data_type(build_column_id), [&](const auto build_data_type_t) {
+    using BuildColumnDataType = typename decltype(build_data_type_t)::type;
+    resolve_data_type(probe_input->column_data_type(probe_column_id), [&](const auto probe_data_type_t) {
+      using ProbeColumnDataType = typename decltype(probe_data_type_t)::type;
+
+      constexpr auto BOTH_ARE_STRING =
+          std::is_same_v<pmr_string, BuildColumnDataType> && std::is_same_v<pmr_string, ProbeColumnDataType>;
+      constexpr auto NEITHER_IS_STRING =
+          !std::is_same_v<pmr_string, BuildColumnDataType> && !std::is_same_v<pmr_string, ProbeColumnDataType>;
+
+      if constexpr (BOTH_ARE_STRING || NEITHER_IS_STRING) {
+        _impl = std::make_unique<JoinHashImpl<BuildColumnDataType, ProbeColumnDataType>>(
+            *this, build_operator, probe_operator, _mode, adjusted_column_ids, _primary_predicate.predicate_condition,
+            inputs_swapped, _radix_bits, std::move(adjusted_secondary_predicates));
+      } else {
+        Fail("Cannot join String with non-String column");
+      }
+    });
+  });
+
   return _impl->_on_execute();
 }
 
@@ -109,7 +120,7 @@ class JoinHash::JoinHashImpl : public AbstractJoinOperatorImpl {
                const std::shared_ptr<const AbstractOperator>& right, const JoinMode mode,
                const ColumnIDPair& column_ids, const PredicateCondition predicate_condition, const bool inputs_swapped,
                const std::optional<size_t>& radix_bits = std::nullopt,
-               std::vector<OperatorJoinPredicate> secondary_join_predicates = {})
+               std::vector<OperatorJoinPredicate> secondary_predicates = {})
       : _join_hash(join_hash),
         _left(left),
         _right(right),
@@ -117,8 +128,8 @@ class JoinHash::JoinHashImpl : public AbstractJoinOperatorImpl {
         _column_ids(column_ids),
         _predicate_condition(predicate_condition),
         _inputs_swapped(inputs_swapped),
-        _secondary_join_predicates(std::move(secondary_join_predicates)) {
-    if (radix_bits.has_value()) {
+        _secondary_predicates(std::move(secondary_predicates)) {
+    if (radix_bits) {
       _radix_bits = radix_bits.value();
     } else {
       _radix_bits = _calculate_radix_bits();
@@ -132,7 +143,7 @@ class JoinHash::JoinHashImpl : public AbstractJoinOperatorImpl {
   const ColumnIDPair _column_ids;
   const PredicateCondition _predicate_condition;
   const bool _inputs_swapped;
-  const std::vector<OperatorJoinPredicate> _secondary_join_predicates;
+  const std::vector<OperatorJoinPredicate> _secondary_predicates;
 
   std::shared_ptr<Table> _output_table;
 
@@ -262,8 +273,15 @@ class JoinHash::JoinHashImpl : public AbstractJoinOperatorImpl {
         radix_left = std::move(materialized_left);
       }
 
-      // build hash tables
-      hashtables = build<LeftType, HashedType>(radix_left);
+      // Build hash tables. In the case of semi or anti joins, we do not need to track all rows on the hashed side,
+      // just one per value. However, if we have secondary predicates, those might fail on that single row. In that
+      // case, we DO need all rows.
+      if (_secondary_predicates.empty() &&
+          (_mode == JoinMode::Semi || _mode == JoinMode::AntiNullAsTrue || _mode == JoinMode::AntiNullAsFalse)) {
+        hashtables = build<LeftType, HashedType, JoinHashBuildMode::SinglePosition>(radix_left);
+      } else {
+        hashtables = build<LeftType, HashedType, JoinHashBuildMode::AllPositions>(radix_left);
+      }
     }));
     jobs.back()->schedule();
 
@@ -337,24 +355,24 @@ class JoinHash::JoinHashImpl : public AbstractJoinOperatorImpl {
     switch (_mode) {
       case JoinMode::Inner:
         probe<RightType, HashedType, false>(radix_right, hashtables, left_pos_lists, right_pos_lists, _mode,
-                                            *left_in_table, *right_in_table, _secondary_join_predicates);
+                                            *left_in_table, *right_in_table, _secondary_predicates);
         break;
 
       case JoinMode::Left:
       case JoinMode::Right:
         probe<RightType, HashedType, true>(radix_right, hashtables, left_pos_lists, right_pos_lists, _mode,
-                                           *left_in_table, *right_in_table, _secondary_join_predicates);
+                                           *left_in_table, *right_in_table, _secondary_predicates);
         break;
 
       case JoinMode::Semi:
       case JoinMode::AntiNullAsTrue:
         probe_semi_anti<RightType, HashedType, false>(radix_right, hashtables, right_pos_lists, _mode, *left_in_table,
-                                                      *right_in_table, _secondary_join_predicates);
+                                                      *right_in_table, _secondary_predicates);
         break;
 
       case JoinMode::AntiNullAsFalse:
         probe_semi_anti<RightType, HashedType, true>(radix_right, hashtables, right_pos_lists, _mode, *left_in_table,
-                                                     *right_in_table, _secondary_join_predicates);
+                                                     *right_in_table, _secondary_predicates);
         break;
 
       default:
