@@ -1,6 +1,5 @@
 #include "pipeline_execution_task.hpp"
 
-#include <chrono>
 #include "scheduler/current_scheduler.hpp"
 #include "sql/sql_pipeline_builder.hpp"
 
@@ -9,9 +8,9 @@ namespace opossum {
 PipelineExecutionTask::PipelineExecutionTask(const SQLPipelineBuilder builder) : _builder(std::move(builder)) {}
 
 std::shared_ptr<SQLPipeline> PipelineExecutionTask::get_sql_pipeline() {
-  if (!query_tasks.back()->is_done()) {
-    CurrentScheduler::wait_for_tasks(query_tasks);
-  }
+  // Both, this tasks and SQLPipeline might not have been (fully) executed until this point. Blocking wait for all of
+  // them being executed.
+  CurrentScheduler::wait_for_tasks(get_tasks());
   return _sql_pipeline;
 }
 
@@ -19,10 +18,11 @@ void PipelineExecutionTask::set_query_done_callback(const std::function<void()>&
   _done_callback = done_callback;
 }
 
-std::vector<std::shared_ptr<AbstractTask>> PipelineExecutionTask::get_tasks() const {
-  // Task might not have been executed so far
-  while (!is_done()) {
-    std::this_thread::sleep_for(std::chrono::milliseconds(10));
+
+std::vector<std::shared_ptr<OperatorTask>> PipelineExecutionTask::get_tasks() {
+  // Wait until this task has been executed
+  if (!is_done()) {
+    CurrentScheduler::wait_for_tasks(std::vector<std::shared_ptr<AbstractTask>>{shared_from_this()});
   }
   return query_tasks;
 }
