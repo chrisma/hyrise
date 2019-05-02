@@ -54,4 +54,5 @@ std::shared_ptr<AbstractTask> TaskQueue::steal() {
   }
   return nullptr;
 }
+
 }  // namespace opossum

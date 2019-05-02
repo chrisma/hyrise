@@ -179,7 +179,7 @@ void BenchmarkRunner::_benchmark_permuted_query_set() {
   auto finished_query_set_runs = std::atomic_uint{0};
   auto finished_queries_total = std::atomic_uint{0};
 
-  auto tasks = std::vector<std::shared_ptr<AbstractTask>>{};
+  auto tasks = std::vector<std::shared_ptr<PipelineExecutionTask>>{};
   auto state = BenchmarkState{_config.max_duration};
 
   while (state.keep_running() && finished_query_set_runs.load(std::memory_order_relaxed) < _config.max_num_query_runs) {
@@ -222,7 +222,9 @@ void BenchmarkRunner::_benchmark_permuted_query_set() {
   // Wait for the rest of the tasks that didn't make it in time - they will not count toward the results
   // TODO(leander/anyone): To be replaced with something like CurrentScheduler::abort(),
   // that properly removes all remaining tasks from all queues, without having to wait for them
-  CurrentScheduler::wait_for_tasks(tasks);
+  for (auto& task : tasks) {
+    CurrentScheduler::wait_for_tasks(task->get_tasks());
+  }
   Assert(currently_running_clients == 0, "All query set runs must be finished at this point");
 }
 
@@ -238,7 +240,7 @@ void BenchmarkRunner::_benchmark_individual_queries() {
     auto currently_running_clients = std::atomic_uint{0};
     auto& result = _query_results[query_id];
 
-    auto tasks = std::vector<std::shared_ptr<AbstractTask>>{};
+    auto tasks = std::vector<std::shared_ptr<PipelineExecutionTask>>{};
     auto state = BenchmarkState{_config.max_duration};
 
     while (state.keep_running() && result.num_iterations.load(std::memory_order_relaxed) < _config.max_num_query_runs) {
@@ -265,7 +267,7 @@ void BenchmarkRunner::_benchmark_individual_queries() {
       }
     }
     state.set_done();
-    // _store_plan(query_id, *(std::dynamic_pointer_cast<PipelineExecutionTask>(tasks[0])->get_sql_pipeline()));
+    _store_plan(query_id, *(tasks[0]->get_sql_pipeline()));
     result.duration_ns.store(std::chrono::duration_cast<std::chrono::nanoseconds>(state.benchmark_duration).count());
 
     const auto duration_seconds = static_cast<float>(result.duration_ns) / 1'000'000'000;
@@ -278,7 +280,7 @@ void BenchmarkRunner::_benchmark_individual_queries() {
     // TODO(leander/anyone): To be replaced with something like CurrentScheduler::abort(),
     // that properly removes all remaining tasks from all queues, without having to wait for them
     for (auto& task : tasks) {
-      CurrentScheduler::wait_for_tasks(std::dynamic_pointer_cast<PipelineExecutionTask>(task)->get_tasks());
+      CurrentScheduler::wait_for_tasks(task->get_tasks());
     }
     Assert(currently_running_clients == 0, "All query runs must be finished at this point");
   }
@@ -296,7 +298,7 @@ void BenchmarkRunner::_warmup_query(const QueryID query_id) {
   // let a simulated client schedule the next query, as well as the total number of finished queries so far
   auto currently_running_clients = std::atomic_uint{0};
 
-  auto tasks = std::vector<std::shared_ptr<AbstractTask>>{};
+  auto tasks = std::vector<std::shared_ptr<PipelineExecutionTask>>{};
   auto state = BenchmarkState{_config.warmup_duration};
 
   while (state.keep_running()) {
@@ -321,7 +323,9 @@ void BenchmarkRunner::_warmup_query(const QueryID query_id) {
   // Wait for the rest of the tasks that didn't make it in time
   // TODO(leander/anyone): To be replaced with something like CurrentScheduler::abort(),
   // that properly removes all remaining tasks from all queues, without having to wait for them
-  CurrentScheduler::wait_for_tasks(tasks);
+  for (auto& task : tasks) {
+    CurrentScheduler::wait_for_tasks(task->get_tasks());
+  }
   Assert(currently_running_clients == 0, "All query runs must be finished at this point");
 }
 

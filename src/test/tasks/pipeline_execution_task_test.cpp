@@ -56,7 +56,7 @@ TEST_F(PipelineExecutionTaskTest, SetQueryDoneCallback) {
   auto query_done = false;
   auto done_callback = [&query_done] { query_done = true; };
 
-  pipeline_task->set_done_callback(done_callback);
+  pipeline_task->set_query_done_callback(done_callback);
   pipeline_task->execute();
   pipeline_task->get_sql_pipeline();
 

@@ -1,7 +1,6 @@
 #include "pipeline_execution_task.hpp"
 
 #include "scheduler/current_scheduler.hpp"
-#include "sql/sql_pipeline_builder.hpp"
 
 namespace opossum {
 
